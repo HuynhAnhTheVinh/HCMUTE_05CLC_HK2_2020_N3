@@ -1,0 +1,92 @@
+// Source FireBase Code: https://circuitdigest.com/microcontroller-projects/sending-temperature-and-humidity-data-to-firebase-database-using-esp8266
+// Source ThingSpeak Code: https://arduino.esp8266.vn/projects/dht11-thingspeak.html
+
+// Add these library:
+//    Firebase-arduino: https://github.com/FirebaseExtended/firebase-arduino.git
+//    ArduinoJson-5.x: https://github.com/bblanchon/ArduinoJson.git
+
+// Add this to File-->Preferences-->Addtionals Board Manager URLs.
+//    http://arduino.esp8266.com/stable/package_esp8266com_index.json
+// Then go to Tools--> Board Manager. Type "ESP8266" in the text box to search and install the ESP8266 software for Arduino IDE.
+
+#include <ESP8266WiFi.h>                                                    // esp8266 library 
+#include <FirebaseArduino.h>                                                // firebase library 
+#include <DHT.h>                                                            // dht11 temperature and humidity sensor library
+
+//DHT config
+#define DHTPIN D2                                                           // what digital pin we're connected to
+#define DHTTYPE DHT11                                                       // select dht type as DHT 11 or DHT22
+DHT dht(DHTPIN, DHTTYPE);                                                     
+
+// Wi-Fi Settings
+#define WIFI_SSID "network_name"                                             // input your home or public wifi name 
+#define WIFI_PASSWORD "password"                                             // password of wifi ssid
+
+// FireBase Settings
+#define FIREBASE_HOST "your-project.firebaseio.com"                         // the project name address from firebase id
+#define FIREBASE_AUTH "Uejx9ROxxxxxxxxxxxxxxxxxxxxxxxxxxfQDDkhN"            // the secret key generated from firebase
+
+WiFiClient client;
+
+// ThingSpeak Settings
+const int channelID = YOUR-CHANNEL-ID; //
+String writeAPIKey = "YOUR-API-KEY"; // write API key for your ThingSpeak Channel
+const char* server = "api.thingspeak.com";
+const int postingInterval = 2 * 1000; // post data every 2 seconds
+
+void setup() {
+      Serial.begin(115200);
+      delay(1000);                
+      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);                                     //try to connect with wifi
+      Serial.print("Connecting to ");
+      Serial.print(WIFI_SSID);
+      while (WiFi.status() != WL_CONNECTED) {
+            Serial.print(".");
+            delay(100);
+      }
+      Serial.println();
+      Serial.print("Connected to ");
+      Serial.println(WIFI_SSID);
+      Serial.print("IP Address is : ");
+      Serial.println(WiFi.localIP());                                            //print local IP address
+      Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);                              // connect to firebase
+      dht.begin();                                                               //Start reading dht sensor
+}
+
+void loop() { 
+      // wait and then post again
+      delay(postingInterval);
+  
+      float humi = dht.readHumidity();                                              // Reading temperature or humidity takes about 250 milliseconds!
+      float temp = dht.readTemperature();                                           // Read temperature as Celsius (the default)
+    
+      if (isnan(humi) || isnan(temp)) {                                             // Check if any reads failed and exit early (to try again).
+            Serial.println(F("Failed to read from DHT sensor!"));
+            return;
+      }
+
+      String fireTemp = String(temp) + String("°C");                                      //convert integer temperature to string temperature
+      String fireHumid = String(humi) + String("%");                                      //convert integer humidity to string humidity 
+      Serial.print("Temperature: ");  Serial.print(temp);                                    //convert integer humidity to string humidity 
+      Serial.print("°C  Humidity: ");  Serial.print(humi);  Serial.println("% ");
+
+      Firebase.pushString("/DHT11/Temperature", fireTemp);                                //setup path and send readings
+      Firebase.pushString("/DHT11/Humidity", fireHumid);                                  //setup path and send readings
+
+      if (client.connect(server, 80)) {
+            // Construct API request body
+            String body = "field1=" + String(temp, 1) + "&field2=" + String(humi, 1);
+
+            client.print("POST /update HTTP/1.1\n");
+            client.print("Host: api.thingspeak.com\n");
+            client.print("Connection: close\n");
+            client.print("X-THINGSPEAKAPIKEY: " + writeAPIKey + "\n");
+            client.print("Content-Type: application/x-www-form-urlencoded\n");
+            client.print("Content-Length: ");
+            client.print(body.length());
+            client.print("\n\n");
+            client.print(body);
+            client.print("\n\n");
+      }
+      client.stop();
+}
